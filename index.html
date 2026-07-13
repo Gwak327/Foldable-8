@@ -279,8 +279,12 @@ button,input,select,textarea{font-family:inherit}
     <div class="michint">🎤 버튼을 누르고 말하면 텍스트로 자동 변환됩니다 (지원 안 될 경우 키보드의 마이크 키 이용)</div>
     <div class="f-l">VMD 부착 사진 (선택 · 카메라 직접 촬영만 인증)</div>
     <input type="file" id="vPhotoIn" accept="image/*" capture="environment" hidden>
-    <button class="btn sec sm" id="vPhotoBtn">📷 VMD 부착 사진 촬영</button>
-    <div class="michint">촬영 즉시 시각·기기정보(EXIF)를 검증해 <b>현장 실촬영 인증</b> 배지가 붙습니다. 갤러리의 예전 사진·스크린샷·전달받은 이미지는 '인증 불가'로 표시됩니다. 사진에는 일시·마케터명 워터마크가 자동 합성됩니다.</div>
+    <input type="file" id="vPhotoLib" accept="image/*" hidden>
+    <div class="brow">
+      <button class="btn sec sm" id="vPhotoBtn">📷 현장 촬영</button>
+      <button class="btn sec sm" id="vPhotoLibBtn">🖼 기존 사진 업로드</button>
+    </div>
+    <div class="michint"><b>현장 촬영</b>: 시각·기기정보(EXIF) 검증 → <b>현장 실촬영 인증</b> 배지.<br><b>기존 사진 업로드</b>: 이미 부착을 마치고 찍어둔 사진용 — 촬영시각(EXIF)이 확인되면 <b>기존 사진(촬영일 표기)</b>으로 등록됩니다. 스크린샷·전달본은 '촬영정보 없음'으로 표시(등록은 가능). 모든 사진에 일시·마케터명 워터마크 자동 합성.</div>
     <div id="vPhotoPrev"></div>
     <div style="height:12px"></div>
     <button class="btn pri sm" id="vSave">＋ 방문 기록 저장</button>
@@ -342,6 +346,7 @@ button,input,select,textarea{font-family:inherit}
     <div class="setrow"><span class="k">이름</span><input id="setName"></div>
     <div class="setrow"><span class="k">소속 팀</span><input id="setTeam"></div>
     <div class="setrow"><span class="k">사전개통일</span><input type="date" id="setLaunch"></div>
+    <div class="setrow"><span class="k">일정 버전 <small id="planVer" style="display:block;font-size:10px;color:var(--tx3);font-weight:700">기본 배포판</small></span><button class="chip" id="btnPlanIn">📅 업데이트 불러오기</button><input type="file" id="planIn" accept=".json,application/json" hidden></div>
     <div class="setrow"><span class="k">데이터 초기화</span><button class="chip" id="btnReset" style="color:#ef4a6e;border-color:#f2c2cd">전체 삭제</button></div>
   </div>
 </div>
@@ -433,6 +438,9 @@ var LEVERS=[
 ];
 var CAT_COLOR={'시장 동향':'#4c7ef3','경쟁사 동향':'#ef4a6e','요청·건의':'#e08a00','우수 사례':'#12a37f'};
 var RANGE=[-33,4];
+/* 팀장 배포 일정(fold8_plan_v1) 적용 시 우선 사용 */
+function getMS(){ return (S.plan&&S.plan.ms&&S.plan.ms.length)?S.plan.ms:MS; }
+function getACT(ph){ var a=(S.plan&&S.plan.act)?S.plan.act:ACT; return a[ph]||[]; }
 
 /* ============ 상태 ============ */
 var LS='fold8_field_v1';
@@ -454,7 +462,7 @@ function todayISO(){var t=new Date();return isoOf(new Date(t.getFullYear(),t.get
 function nowTS(){var d=new Date();return isoOf(d)+' '+pad(d.getHours())+':'+pad(d.getMinutes());}
 function fmtK(d){var w=['일','월','화','수','목','금','토'];return (d.getMonth()+1)+'/'+d.getDate()+'('+w[d.getDay()]+')';}
 function ddLabel(dd){return dd===0?'D-Day':(dd>0?'D+'+dd:'D'+dd);}
-function msOnDD(dd){return MS.filter(function(m){return m.dd===dd;});}
+function msOnDD(dd){return getMS().filter(function(m){return m.dd===dd;});}
 function uid(){return 'x'+Date.now().toString(36)+Math.floor(Math.random()*1e4).toString(36);}
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 var toastT;
@@ -467,7 +475,7 @@ function dayStat(iso){
   if(dd<RANGE[0]||dd>RANGE[1]) return {t:0,d:0};
   var ph=phaseOfDD(dd), t=0, d=0;
   msOnDD(dd).forEach(function(m){t++; if(S.done[iso+'|m:'+m.id])d++;});
-  (ACT[ph]||[]).forEach(function(a){t++; if(S.done[iso+'|d:'+a.id])d++;});
+  getACT(ph).forEach(function(a){t++; if(S.done[iso+'|d:'+a.id])d++;});
   return {t:t,d:d};
 }
 
@@ -526,7 +534,7 @@ function buildDayList(iso,compactNote){
         +(done?'<div class="mt">✅ '+esc(S.done[key])+' 완료</div>':'')+'</div></div>';
     });
   }
-  var acts=ACT[ph]||[];
+  var acts=getACT(ph);
   if(acts.length){
     h+='<div class="gl">🔁 Daily 활동 <span class="cnt">('+P.short+' 기간 공통)</span><span class="ln"></span></div>';
     acts.forEach(function(a){
@@ -680,7 +688,7 @@ function parseExif(buf){
   }catch(e){}
   return res;
 }
-function photoVerdict(exif,file){
+function photoVerdict(exif,file,src){
   var now=Date.now(), shotMs=null;
   var dt=exif.dtOrig||exif.dt;
   if(dt){ var m=dt.match(/(\d{4}):(\d{2}):(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
@@ -688,17 +696,22 @@ function photoVerdict(exif,file){
   var hasCam=!!(exif.make||exif.model);
   var freshExif=shotMs&&Math.abs(now-shotMs)<15*60000;
   var freshFile=file.lastModified&&(now-file.lastModified)<5*60000;
+  if(src==='lib'){
+    if(shotMs) return {v:'part', lb:'기존 사진 · 촬영 '+dt.slice(0,10).replace(/:/g,'-'),
+      why:'기존 부착 사진으로 등록 — EXIF 촬영시각 확인됨'+(hasCam?' ('+(exif.model||exif.make)+')':'')};
+    return {v:'no', lb:'촬영정보 없음', why:'EXIF가 없어 촬영 시점 확인 불가 — 스크린샷·전달받은 이미지 가능성 (참고용 등록 가능)'};
+  }
   if(freshExif&&hasCam) return {v:'ok',  lb:'현장 실촬영 인증', why:'촬영시각·카메라 기기정보 확인됨 ('+(exif.model||exif.make)+')'};
   if(freshExif)         return {v:'ok',  lb:'현장 실촬영 인증', why:'EXIF 촬영시각이 현재와 일치'};
   if(freshFile&&!dt)    return {v:'part',lb:'실시간 촬영 추정', why:'방금 생성된 파일 — 브라우저가 EXIF를 제거해 기기정보는 확인 불가'};
-  if(shotMs)            return {v:'no',  lb:'인증 불가',       why:'촬영시각('+dt.slice(0,16)+')이 현재와 다름 — 예전 사진으로 추정'};
+  if(shotMs)            return {v:'no',  lb:'인증 불가',       why:'촬영시각('+dt.slice(0,16)+')이 현재와 다름 — [기존 사진 업로드] 버튼을 이용하세요'};
   return {v:'no', lb:'인증 불가', why:'촬영정보(EXIF) 없음 — 스크린샷·전달받은 이미지 가능성'};
 }
 var pendingPhoto=null;
-function processPhoto(file,cb){
+function processPhoto(file,src,cb){
   var fr=new FileReader();
   fr.onload=function(){
-    var vd=photoVerdict(parseExif(fr.result),file);
+    var vd=photoVerdict(parseExif(fr.result),file,src);
     var img=new Image();
     img.onload=function(){
       var MAX=640, w=img.width, h=img.height;
@@ -710,9 +723,10 @@ function processPhoto(file,cb){
       cx.fillStyle='#fff'; cx.font='bold '+Math.max(11,Math.round(bar*0.42))+'px sans-serif';
       cx.textBaseline='middle';
       var who=S.profile?S.profile.name:'미설정';
-      cx.fillText('폴더블8 VMD 점검 · '+nowTS()+' · '+who, 8, h-bar/2);
+      var tag=(src==='lib')?'기존 부착 사진 · 등록 ':'폴더블8 VMD 점검 · ';
+      cx.fillText(tag+nowTS()+' · '+who, 8, h-bar/2);
       URL.revokeObjectURL(img.src);
-      cb({d:cv.toDataURL('image/jpeg',0.62), v:vd.v, lb:vd.lb, why:vd.why, ts:nowTS()});
+      cb({d:cv.toDataURL('image/jpeg',0.62), v:vd.v, lb:vd.lb, why:vd.why, ts:nowTS(), src:src||'cam'});
     };
     img.onerror=function(){ toast('이미지를 처리할 수 없습니다'); };
     img.src=URL.createObjectURL(file);
@@ -727,16 +741,19 @@ function renderPhotoPrev(){
     +'<div class="why">'+esc(pendingPhoto.why)+'</div><button class="rm" id="vPhotoDel">사진 제거</button></div></div>';
   $('vPhotoDel').addEventListener('click',function(){ pendingPhoto=null; renderPhotoPrev(); });
 }
-$('vPhotoBtn').addEventListener('click',function(){
-  try{ var cur=localStorage.getItem(LS); if(cur&&cur.length>4200000){ toast('저장 공간이 거의 찼습니다 — [내 데이터 내보내기] 후 초기화하거나 사진 없이 저장하세요'); return; } }catch(e){}
-  $('vPhotoIn').click();
-});
-$('vPhotoIn').addEventListener('change',function(e){
+function photoGuardOK(){ try{ var cur=localStorage.getItem(LS); if(cur&&cur.length>4200000){ toast('저장 공간이 거의 찼습니다 — [내 데이터 내보내기] 후 정리하거나 사진 없이 저장하세요'); return false; } }catch(e){} return true; }
+$('vPhotoBtn').addEventListener('click',function(){ if(photoGuardOK()) $('vPhotoIn').click(); });
+$('vPhotoLibBtn').addEventListener('click',function(){ if(photoGuardOK()) $('vPhotoLib').click(); });
+function onPhotoPick(e,src){
   var f=e.target.files[0]; if(!f) return;
-  processPhoto(f,function(res){ pendingPhoto=res; renderPhotoPrev();
-    toast(res.v==='ok'?'실촬영 인증 완료 ✓':res.v==='part'?'실시간 촬영으로 추정됨':'인증 불가 — 현장에서 직접 촬영해 주세요'); });
+  processPhoto(f,src,function(res){ pendingPhoto=res; renderPhotoPrev();
+    if(res.v==='ok') toast('실촬영 인증 완료 ✓');
+    else if(src==='lib') toast(res.v==='part'?'기존 부착 사진으로 등록됩니다 (촬영일 표기)':'촬영정보가 없어 참고용으로 등록됩니다');
+    else toast(res.v==='part'?'실시간 촬영으로 추정됨':'인증 불가 — 기존 사진이라면 [기존 사진 업로드] 이용'); });
   e.target.value='';
-});
+}
+$('vPhotoIn').addEventListener('change',function(e){ onPhotoPick(e,'cam'); });
+$('vPhotoLib').addEventListener('change',function(e){ onPhotoPick(e,'lib'); });
 
 /* ============ chips 공통 ============ */
 function chipGroup(id,multi){
@@ -861,7 +878,7 @@ function buildReport(){
     light+' 오늘 활동: '+st.d+'/'+st.t+' 완료 ('+pct+'%)'];
   var undone=[];
   msOnDD(dd).forEach(function(m){ if(!S.done[iso+'|m:'+m.id])undone.push('★ '+m.title); });
-  (ACT[ph]||[]).forEach(function(a){ if(!S.done[iso+'|d:'+a.id])undone.push(a.tx); });
+  getACT(ph).forEach(function(a){ if(!S.done[iso+'|d:'+a.id])undone.push(a.tx); });
   if(undone.length){ L.push('⚠️ 미완료:'); undone.slice(0,5).forEach(function(u){L.push(' · '+u);}); }
   var vs=S.visits.filter(function(v){return v.date===iso;});
   L.push('🏪 판매점 방문: '+vs.length+'건'+(vs.length?' ('+vs.map(function(v){return (v.tier?v.tier+'·':'')+v.store+(v.pcode?'['+v.pcode+']':'');}).slice(0,6).join(', ')+')':''));
@@ -908,10 +925,27 @@ function renderSettings(){
   $('setName').value=S.profile?S.profile.name:'';
   $('setTeam').value=S.profile?S.profile.team:'';
   $('setLaunch').value=S.launch;
+  var pv=$('planVer'); if(pv)pv.textContent=S.plan?('팀장 배포판 적용됨 · '+(S.plan.ver||'')):'기본 배포판';
 }
 $('setName').addEventListener('change',function(){ S.profile=S.profile||{}; S.profile.name=this.value.trim(); save(); renderHeader(); toast('저장됨'); });
 $('setTeam').addEventListener('change',function(){ S.profile=S.profile||{}; S.profile.team=this.value.trim(); save(); renderHeader(); toast('저장됨'); });
 $('setLaunch').addEventListener('change',function(){ if(!this.value)return; S.launch=this.value; save(); selISO=null; renderAll(); toast('개통일 변경 — 일정 재계산됨'); });
+$('btnPlanIn').addEventListener('click',function(){$('planIn').click();});
+$('planIn').addEventListener('change',function(e){
+  var f=e.target.files[0]; if(!f)return;
+  var r=new FileReader();
+  r.onload=function(){
+    try{
+      var j=JSON.parse(r.result);
+      if(j.type!=='fold8_plan_v1'||!j.ms||!j.act){ toast('일정 배포 파일이 아닙니다 — 팀장 대시보드의 [일정 배포]로 만든 파일을 선택하세요'); return; }
+      S.plan={ms:j.ms, act:j.act, ver:j.exportedAt||''};
+      if(j.launch) S.launch=j.launch;
+      save(); selISO=null; renderAll();
+      toast('일정 업데이트 적용 완료 — 기존 체크 기록은 그대로 유지됩니다');
+    }catch(err){ toast('파일을 읽을 수 없습니다'); }
+  };
+  r.readAsText(f); e.target.value='';
+});
 $('btnReset').addEventListener('click',function(){
   if(!confirm('모든 체크·방문·시장정보 데이터가 삭제됩니다. 계속할까요?'))return;
   if(!confirm('정말 삭제합니까? 되돌릴 수 없습니다. (내보내기로 백업 권장)'))return;
